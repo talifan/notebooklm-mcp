@@ -24,6 +24,13 @@ jest.unstable_mockModule('../config.js', () => ({
     headless: true,
     stealthEnabled: true,
     viewport: { width: 1920, height: 1080 },
+    uiLocale: 'en',
+  },
+  LOCALE_BROWSER_SETTINGS: {
+    fr: { locale: 'fr-FR', timezone: 'Europe/Paris' },
+    en: { locale: 'en-US', timezone: 'America/New_York' },
+    de: { locale: 'de-DE', timezone: 'Europe/Berlin' },
+    ja: { locale: 'ja-JP', timezone: 'Asia/Tokyo' },
   },
   NOTEBOOKLM_AUTH_URL: 'https://notebooklm.google.com/',
   applyBrowserOptions: jest.fn((options: any) => options),

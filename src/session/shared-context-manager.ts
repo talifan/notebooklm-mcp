@@ -14,7 +14,7 @@
 
 import type { BrowserContext } from 'patchright';
 import { chromium } from 'patchright';
-import { CONFIG } from '../config.js';
+import { CONFIG, LOCALE_BROWSER_SETTINGS } from '../config.js';
 import { log } from '../utils/logger.js';
 import { AuthManager } from '../auth/auth-manager.js';
 import { getAccountManager } from '../accounts/account-manager.js';
@@ -174,8 +174,8 @@ export class SharedContextManager {
     // Build launch options for persistent context
     // NOTE: userDataDir is passed as first parameter, NOT in options!
     // Map uiLocale to browser locale
-    const browserLocale = CONFIG.uiLocale === 'fr' ? 'fr-FR' : 'en-US';
-    const browserTimezone = CONFIG.uiLocale === 'fr' ? 'Europe/Paris' : 'America/New_York';
+    const browserLocale = LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].locale;
+    const browserTimezone = LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].timezone;
 
     const launchOptions = {
       headless: shouldBeHeadless,

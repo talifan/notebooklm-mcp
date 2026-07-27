@@ -10,7 +10,7 @@ import { chromium } from 'patchright';
 import path from 'path';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
-import { CONFIG, NOTEBOOKLM_AUTH_URL } from '../config.js';
+import { CONFIG, NOTEBOOKLM_AUTH_URL, LOCALE_BROWSER_SETTINGS } from '../config.js';
 import { isNotebookUrl } from '../utils/notebook-domain.js';
 import { log } from '../utils/logger.js';
 import {
@@ -80,8 +80,8 @@ export class AutoLoginManager {
 
       // Launch persistent browser for this account
       // Map uiLocale to browser locale
-      const browserLocale = CONFIG.uiLocale === 'fr' ? 'fr-FR' : 'en-US';
-      const browserTimezone = CONFIG.uiLocale === 'fr' ? 'Europe/Paris' : 'America/New_York';
+      const browserLocale = LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].locale;
+      const browserTimezone = LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].timezone;
 
       context = await chromium.launchPersistentContext(account.profileDir, {
         headless: !options.showBrowser,

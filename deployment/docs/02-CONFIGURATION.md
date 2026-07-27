@@ -38,7 +38,7 @@ node dist/http-wrapper.js
 | ---------------------- | ------- | ------------------------------------------------------- |
 | `HEADLESS`             | `true`  | Chrome headless (`true` = invisible, `false` = visible) |
 | `STEALTH_ENABLED`      | `true`  | Stealth anti-detection mode                             |
-| `NOTEBOOKLM_UI_LOCALE` | `fr`    | UI language for selectors (`fr` or `en`)                |
+| `NOTEBOOKLM_UI_LOCALE` | `fr`    | UI language for selectors (`fr`, `en`, `de`, `ja`)      |
 
 **Examples:**
 
@@ -196,7 +196,7 @@ NODE_ENV=production
 # Browser Configuration
 HEADLESS=true
 STEALTH_ENABLED=true
-NOTEBOOKLM_UI_LOCALE=fr  # or 'en' for English
+NOTEBOOKLM_UI_LOCALE=fr  # fr | en | de | ja
 
 # Session Configuration
 MAX_SESSIONS=10

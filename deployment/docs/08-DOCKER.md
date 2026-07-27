@@ -93,17 +93,17 @@ docker restart notebooklm-mcp
 
 ### Environment Variables
 
-| Variable               | Default   | Description           |
-| ---------------------- | --------- | --------------------- |
-| `HTTP_PORT`            | `3000`    | HTTP server port      |
-| `HTTP_HOST`            | `0.0.0.0` | HTTP server host      |
-| `HEADLESS`             | `true`    | Run browser headless  |
-| `STEALTH_ENABLED`      | `true`    | Enable anti-detection |
-| `NOTEBOOKLM_DATA_DIR`  | `/data`   | Data directory path   |
-| `NOTEBOOKLM_UI_LOCALE` | `fr`      | UI language (fr/en)   |
-| `AUTO_LOGIN_ENABLED`   | `false`   | Enable auto-login     |
-| `ENABLE_VNC`           | `true`    | Enable noVNC server   |
-| `NOVNC_PORT`           | `6080`    | noVNC web port        |
+| Variable               | Default   | Description               |
+| ---------------------- | --------- | ------------------------- |
+| `HTTP_PORT`            | `3000`    | HTTP server port          |
+| `HTTP_HOST`            | `0.0.0.0` | HTTP server host          |
+| `HEADLESS`             | `true`    | Run browser headless      |
+| `STEALTH_ENABLED`      | `true`    | Enable anti-detection     |
+| `NOTEBOOKLM_DATA_DIR`  | `/data`   | Data directory path       |
+| `NOTEBOOKLM_UI_LOCALE` | `fr`      | UI language (fr/en/de/ja) |
+| `AUTO_LOGIN_ENABLED`   | `false`   | Enable auto-login         |
+| `ENABLE_VNC`           | `true`    | Enable noVNC server       |
+| `NOVNC_PORT`           | `6080`    | noVNC web port            |
 
 ### Custom Configuration
 

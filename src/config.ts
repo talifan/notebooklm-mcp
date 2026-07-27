@@ -78,11 +78,26 @@ export interface Config {
   instanceProfileMaxCount: number;
 
   // UI Locale (NotebookLM follows Google Account language)
-  uiLocale: 'fr' | 'en';
+  uiLocale: 'fr' | 'en' | 'de' | 'ja';
 
   // Browser channel: 'chromium' (default, Docker compatible) or 'chrome' (local install)
   browserChannel: 'chromium' | 'chrome';
 }
+
+/**
+ * Browser context locale + timezone for each supported UI locale.
+ * Used to align the Playwright context with the forced NotebookLM UI language
+ * (see withUiLocale / hl=). Keep the key set in sync with Config['uiLocale'].
+ */
+export const LOCALE_BROWSER_SETTINGS: Record<
+  Config['uiLocale'],
+  { locale: string; timezone: string }
+> = {
+  fr: { locale: 'fr-FR', timezone: 'Europe/Paris' },
+  en: { locale: 'en-US', timezone: 'America/New_York' },
+  de: { locale: 'de-DE', timezone: 'Europe/Berlin' },
+  ja: { locale: 'ja-JP', timezone: 'Asia/Tokyo' },
+};
 
 /**
  * Default Configuration (works out of the box!)
@@ -199,7 +214,7 @@ function parseLocale(
 ): Config['uiLocale'] {
   if (!value) return defaultValue;
   const lower = value.toLowerCase();
-  if (lower === 'fr' || lower === 'en') {
+  if (lower === 'fr' || lower === 'en' || lower === 'de' || lower === 'ja') {
     return lower;
   }
   return defaultValue;

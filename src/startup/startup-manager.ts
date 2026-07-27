@@ -9,12 +9,12 @@
  * 5. Clear status messages
  */
 
-import { NOTEBOOK_BASE_URL } from '../utils/notebook-domain.js';
+import { NOTEBOOK_BASE_URL, withUiLocale } from '../utils/notebook-domain.js';
 import { AuthManager } from '../auth/auth-manager.js';
 import { getAccountManager, AccountManager } from '../accounts/account-manager.js';
 import { AutoLoginManager } from '../accounts/auto-login-manager.js';
 import { log } from '../utils/logger.js';
-import { CONFIG } from '../config.js';
+import { CONFIG, LOCALE_BROWSER_SETTINGS } from '../config.js';
 import { maskEmail } from '../accounts/crypto.js';
 
 export interface StartupResult {
@@ -323,7 +323,7 @@ export class StartupManager {
     let context;
 
     try {
-      const browserLocale = CONFIG.uiLocale === 'fr' ? 'fr-FR' : 'en-US';
+      const browserLocale = LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].locale;
       context = await chromium.launchPersistentContext(CONFIG.chromeProfileDir, {
         headless: true,
         ...(CONFIG.browserChannel === 'chrome' && { channel: 'chrome' as const }),
@@ -349,7 +349,7 @@ export class StartupManager {
 
       // Navigate to NotebookLM
       log.info('  🌐 Navigating to NotebookLM to verify session...');
-      await page.goto(NOTEBOOK_BASE_URL, {
+      await page.goto(withUiLocale(NOTEBOOK_BASE_URL, CONFIG.uiLocale), {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
       });

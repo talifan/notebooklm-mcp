@@ -33,6 +33,13 @@ describe('AuthManager', () => {
       CONFIG: {
         dataDir: testDataDir,
         browserStateDir: browserStateDir,
+        uiLocale: 'en',
+      },
+      LOCALE_BROWSER_SETTINGS: {
+        fr: { locale: 'fr-FR', timezone: 'Europe/Paris' },
+        en: { locale: 'en-US', timezone: 'America/New_York' },
+        de: { locale: 'de-DE', timezone: 'Europe/Berlin' },
+        ja: { locale: 'ja-JP', timezone: 'Asia/Tokyo' },
       },
       NOTEBOOKLM_AUTH_URL: 'https://notebooklm.google.com/',
     }));

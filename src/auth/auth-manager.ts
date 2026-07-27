@@ -16,7 +16,7 @@ import type { BrowserContext, Page, ElementHandle } from 'patchright';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { CONFIG, NOTEBOOKLM_AUTH_URL } from '../config.js';
+import { CONFIG, NOTEBOOKLM_AUTH_URL, LOCALE_BROWSER_SETTINGS } from '../config.js';
 import { isNotebookUrl } from '../utils/notebook-domain.js';
 import { log } from '../utils/logger.js';
 import {
@@ -1016,14 +1016,14 @@ export class AuthManager {
       // ✅ CRITICAL FIX: Use launchPersistentContext (same as runtime!)
       // This ensures session cookies persist correctly
       // Map uiLocale to browser locale
-      const browserLocale = CONFIG.uiLocale === 'fr' ? 'fr-FR' : 'en-US';
+      const browserLocale = LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].locale;
 
       const context = await chromium.launchPersistentContext(CONFIG.chromeProfileDir, {
         headless: !shouldShowBrowser, // Use override or default to visible for setup
         ...(CONFIG.browserChannel === 'chrome' && { channel: 'chrome' as const }),
         viewport: CONFIG.viewport,
         locale: browserLocale,
-        timezoneId: CONFIG.uiLocale === 'fr' ? 'Europe/Paris' : 'America/New_York',
+        timezoneId: LOCALE_BROWSER_SETTINGS[CONFIG.uiLocale].timezone,
         args: [
           '--disable-blink-features=AutomationControlled',
           '--disable-dev-shm-usage',

@@ -22,6 +22,13 @@ jest.unstable_mockModule('../config.js', () => ({
     browserStateDir: '/tmp/browser-state',
     viewport: { width: 1024, height: 768 },
     headless: true,
+    uiLocale: 'en',
+  },
+  LOCALE_BROWSER_SETTINGS: {
+    fr: { locale: 'fr-FR', timezone: 'Europe/Paris' },
+    en: { locale: 'en-US', timezone: 'America/New_York' },
+    de: { locale: 'de-DE', timezone: 'Europe/Berlin' },
+    ja: { locale: 'ja-JP', timezone: 'Asia/Tokyo' },
   },
 }));
 

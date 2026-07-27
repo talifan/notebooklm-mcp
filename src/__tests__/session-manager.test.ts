@@ -20,6 +20,13 @@ jest.unstable_mockModule('../config.js', () => ({
     dataDir: '/tmp/test-data',
     maxSessions: 5,
     sessionTimeoutMinutes: 30,
+    uiLocale: 'en',
+  },
+  LOCALE_BROWSER_SETTINGS: {
+    fr: { locale: 'fr-FR', timezone: 'Europe/Paris' },
+    en: { locale: 'en-US', timezone: 'America/New_York' },
+    de: { locale: 'de-DE', timezone: 'Europe/Berlin' },
+    ja: { locale: 'ja-JP', timezone: 'Asia/Tokyo' },
   },
 }));
 
