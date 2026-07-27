@@ -23,6 +23,7 @@ import {
   waitForLatestAnswer,
   snapshotAllResponses,
   countAnswerContainers,
+  markExistingAnswerContainers,
   isRateLimitMessage,
 } from '../utils/page-utils.js';
 import {
@@ -658,6 +659,8 @@ export class BrowserSession {
       // Position baseline for new-answer detection — captured last, right
       // before typing/submit, so no DOM mutation slips in between.
       const baselineContainerCount = await countAnswerContainers(page);
+      const existingAnswerMarker = `${this.sessionId}-${Date.now()}`;
+      await markExistingAnswerContainers(page, existingAnswerMarker);
 
       // Check for rate limit BEFORE trying to submit a question
       log.info(`  🔍 Checking for rate limit before asking...`);
@@ -700,6 +703,17 @@ export class BrowserSession {
       await sendProgress?.('Submitting question...', 3, 5);
       await page.keyboard.press('Enter');
 
+      // Do not inspect the transcript until NotebookLM has accepted the
+      // question. Otherwise a virtualized historical card can be mistaken for
+      // a fresh answer after a failed submission.
+      await page.waitForFunction(
+        `(() => {
+          const input = document.querySelector(${JSON.stringify(inputSelector)});
+          return Boolean(input && 'value' in input && String(input.value).trim() === '');
+        })()`,
+        { timeout: 10000 }
+      );
+
       // Small pause after submit
       await randomDelay(1000, 1500);
 
@@ -712,6 +726,7 @@ export class BrowserSession {
         pollIntervalMs: 1000,
         ignoreTexts: existingResponses,
         baselineContainerCount,
+        existingAnswerMarker,
         debug: true,
       });
 

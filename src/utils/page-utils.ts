@@ -270,6 +270,28 @@ export async function countAnswerContainers(page: Page): Promise<number> {
 }
 
 /**
+ * Marks assistant response containers that were already present before a
+ * question is submitted. A DOM position alone is not a reliable identity:
+ * NotebookLM virtualizes the chat and can mount an old response after the
+ * baseline was captured. The marker stays local to the browser page and is
+ * used only while waiting for this one answer.
+ */
+export async function markExistingAnswerContainers(page: Page, marker: string): Promise<void> {
+  try {
+    await page.evaluate(`
+      (() => {
+        const marker = ${JSON.stringify(marker)};
+        document.querySelectorAll('.to-user-container').forEach((container) => {
+          container.setAttribute('data-nblm-answer-before-request', marker);
+        });
+      })()
+    `);
+  } catch (error) {
+    log.warning(`⚠️ [SNAPSHOT] Failed to mark existing responses: ${error}`);
+  }
+}
+
+/**
  * Count the number of visible assistant response elements
  */
 export async function countResponseElements(page: Page): Promise<number> {
@@ -322,6 +344,12 @@ export async function waitForLatestAnswer(
     pollIntervalMs?: number;
     ignoreTexts?: string[];
     /**
+     * Value assigned to answer containers that existed before submission.
+     * Containers with this value must never be returned for the current
+     * request, even if the UI reorders them.
+     */
+    existingAnswerMarker?: string;
+    /**
      * Count of `.to-user-container` elements captured (via
      * `countAnswerContainers`) BEFORE the question was submitted. When
      * provided, the new answer is identified by DOM position (any container
@@ -338,6 +366,7 @@ export async function waitForLatestAnswer(
     pollIntervalMs = 1000,
     ignoreTexts = [],
     baselineContainerCount,
+    existingAnswerMarker,
     debug = false,
   } = options;
 
@@ -391,7 +420,8 @@ export async function waitForLatestAnswer(
       knownHashes,
       debug,
       pollCount,
-      baselineContainerCount
+      baselineContainerCount,
+      existingAnswerMarker
     );
 
     if (candidate) {
@@ -502,29 +532,16 @@ export async function waitForLatestAnswer(
  * @param pollCount Current poll number (for conditional logging)
  * @param baselineContainerCount Container count before the question was submitted (position path)
  * @returns First NEW response text found, or null
+ * @param existingAnswerMarker Marker for containers present before the request
  */
 async function extractLatestText(
   page: Page,
   knownHashes: Set<number>,
   debug: boolean,
   pollCount: number,
-  baselineContainerCount?: number
+  baselineContainerCount?: number,
+  existingAnswerMarker?: string
 ): Promise<string | null> {
-  // Scroll to bottom periodically to reveal new messages (every 5 polls)
-  if (pollCount % 5 === 0) {
-    try {
-      await page.evaluate(`
-        (() => {
-          const containers = document.querySelectorAll('.chat-scroll-container, .messages-container, [class*="scroll"]');
-          containers.forEach(c => { c.scrollTop = c.scrollHeight; });
-          window.scrollTo(0, document.body.scrollHeight);
-        })()
-      `);
-    } catch {
-      // Ignore scroll errors
-    }
-  }
-
   // Try the primary selector first (most specific for NotebookLM)
   const primarySelector = '.to-user-container';
   try {
@@ -536,6 +553,41 @@ async function extractLatestText(
       log.dim(
         `⏭️ [EXTRACT] Checking ${totalContainers} containers (${knownHashes.size} known hashes)`
       );
+    }
+
+    if (existingAnswerMarker) {
+      // Do not trust a position-based baseline on its own. NotebookLM can
+      // virtualize the transcript and insert an old card after that baseline.
+      // The response is valid only if it is a container not present before
+      // this request and its text was not already visible in the transcript.
+      for (let idx = containers.length - 1; idx >= 0; idx--) {
+        const container = containers[idx];
+        try {
+          if (
+            (await container.getAttribute('data-nblm-answer-before-request')) ===
+            existingAnswerMarker
+          ) {
+            continue;
+          }
+          const textElement = await container.$('.message-text-content');
+          if (textElement) {
+            const text = await textElement.innerText();
+            const sanitized = sanitizeResponseText(text || '');
+            if (sanitized && !knownHashes.has(hashString(sanitized))) {
+              log.success(
+                `✅ [EXTRACT] Found unmarked new text in container[${idx}]: ${sanitized.length} chars`
+              );
+              return sanitized;
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (debug && pollCount % 5 === 0) {
+        log.dim(`⏭️ [EXTRACT] No unmarked new response in ${totalContainers} containers`);
+      }
+      return null;
     }
 
     if (typeof baselineContainerCount === 'number') {
