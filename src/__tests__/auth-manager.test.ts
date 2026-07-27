@@ -223,6 +223,24 @@ describe('AuthManager', () => {
       const validPath = await manager.getValidStatePath();
       expect(validPath).toBe(stateFile);
     });
+
+    it('should trust valid cookies even when the state file is older than seven days', async () => {
+      const manager = new AuthManager();
+      const stateFile = path.join(browserStateDir, 'state.json');
+      const futureTime = Math.floor(Date.now() / 1000) + 86400;
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify({
+          cookies: [{ name: 'SID', domain: '.google.com', expires: futureTime }],
+        })
+      );
+
+      const oldTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      await fs.utimes(stateFile, oldTime, oldTime);
+
+      expect(await manager.isStateExpired()).toBe(false);
+      expect(await manager.getValidStatePath()).toBe(stateFile);
+    });
   });
 
   describe('State Clearing', () => {

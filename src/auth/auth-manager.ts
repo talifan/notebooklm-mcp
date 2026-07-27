@@ -6,7 +6,7 @@
  * - Auto-login with credentials (email/password from ENV)
  * - Browser state persistence (cookies + localStorage + sessionStorage)
  * - Cookie expiry validation
- * - State expiry checks (cookie-based + 7-day file age fallback)
+ * - State expiry checks based on cookie validity
  * - Hard reset for clean start
  *
  * Based on the Python implementation from auth.py
@@ -304,29 +304,16 @@ export class AuthManager {
   }
 
   /**
-   * Check if the saved state is expired
-   * Primary: validates cookies are not expired
-   * Secondary: checks file age as safety fallback (7 days max)
+   * Check if the saved state is expired.
+   * Cookie expiry is the source of truth; mtime can be stale while cookies remain valid.
    */
   async isStateExpired(): Promise<boolean> {
     try {
-      // First, check if file exists
-      const stats = await fs.stat(this.stateFilePath);
+      await fs.stat(this.stateFilePath);
 
-      // Primary check: validate cookies in the file are not expired
       const cookiesValid = await this.validateCookiesFromFile();
       if (!cookiesValid) {
         log.warning('⚠️  State expired: cookies are invalid or expired');
-        return true;
-      }
-
-      // Secondary check: file age as safety fallback (7 days max)
-      const fileAgeSeconds = (Date.now() - stats.mtimeMs) / 1000;
-      const maxAgeSeconds = 7 * 24 * 60 * 60; // 7 days (increased from 24h)
-
-      if (fileAgeSeconds > maxAgeSeconds) {
-        const daysOld = fileAgeSeconds / (24 * 3600);
-        log.warning(`⚠️  State file is ${daysOld.toFixed(1)} days old (max: 7 days)`);
         return true;
       }
 

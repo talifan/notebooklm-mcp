@@ -37,6 +37,19 @@ const RESPONSE_SELECTORS = [
   "[role='listitem'][data-message-author]",
 ];
 
+const DEFAULT_RESPONSE_STABLE_POLLS = 3;
+const DEFAULT_DISAPPEARED_ANSWER_POLLS = 10;
+const DEFAULT_DISAPPEARED_ANSWER_MIN_CHARS = 300;
+
+function getPositiveInteger(value: number | undefined, envName: string, fallback: number): number {
+  if (Number.isFinite(value) && value && value > 0) {
+    return Math.floor(value);
+  }
+
+  const envValue = Number.parseInt(process.env[envName] || '', 10);
+  return Number.isFinite(envValue) && envValue > 0 ? envValue : fallback;
+}
+
 /**
  * Text snippets that indicate a placeholder/loading state
  */
@@ -53,6 +66,14 @@ const PLACEHOLDER_SNIPPETS = [
   'analyse en cours', // NotebookLM loading message (French)
   'loading',
   'please wait',
+  'обработка',
+  'обрабатываю',
+  'идет обработка',
+  'идёт обработка',
+  'ответ формируется',
+  'формируется ответ',
+  'генерируется ответ',
+  'подождите',
   // NotebookLM English loading messages (seen in logs)
   'looking for clues',
   'reading full chapters',
@@ -71,11 +92,14 @@ const PLACEHOLDER_SNIPPETS = [
 const ERROR_SNIPPETS = [
   "le système n'a pas pu répondre", // French: The system could not respond
   'the system could not respond',
+  'системе не удалось ответить',
   "le système n'a pas réussi",
   'the system failed',
   'an error occurred',
+  'произошла ошибка',
   'une erreur est survenue',
   'try again later',
+  'повторите попытку позже',
   'réessayez plus tard',
 ];
 
@@ -184,7 +208,7 @@ function hashString(str: string): number {
 
 /**
  * Check if text is a placeholder/loading message
- * Also treats short texts ending with "..." as placeholders (loading indicators)
+ * Also treats short texts ending with "..." or "…" as placeholders (loading indicators)
  */
 function isPlaceholder(text: string): boolean {
   const lower = text.toLowerCase();
@@ -194,9 +218,9 @@ function isPlaceholder(text: string): boolean {
     return true;
   }
 
-  // Short text ending with "..." is likely a loading message
+  // Short text ending with "..." or "…" is likely a loading message
   // Real responses are typically > 50 chars
-  if (text.length < 50 && text.trim().endsWith('...')) {
+  if (text.length < 50 && /(?:\.\.\.|…)$/.test(text.trim())) {
     return true;
   }
 
@@ -358,6 +382,9 @@ export async function waitForLatestAnswer(
      */
     baselineContainerCount?: number;
     debug?: boolean;
+    stablePolls?: number;
+    disappearedAnswerPolls?: number;
+    disappearedAnswerMinChars?: number;
   } = {}
 ): Promise<string | null> {
   const {
@@ -365,9 +392,12 @@ export async function waitForLatestAnswer(
     timeoutMs = 120000,
     pollIntervalMs = 1000,
     ignoreTexts = [],
-    baselineContainerCount,
     existingAnswerMarker,
+    baselineContainerCount,
     debug = false,
+    stablePolls,
+    disappearedAnswerPolls,
+    disappearedAnswerMinChars,
   } = options;
 
   const deadline = Date.now() + timeoutMs;
@@ -388,7 +418,22 @@ export async function waitForLatestAnswer(
   let pollCount = 0;
   let lastCandidate: string | null = null;
   let stableCount = 0; // Track how many times we see the same text
-  const requiredStablePolls = 3; // Text must be stable for 3 consecutive polls (~3 seconds)
+  let missingAfterCandidateCount = 0;
+  const requiredStablePolls = getPositiveInteger(
+    stablePolls,
+    'NOTEBOOKLM_STABLE_POLLS',
+    DEFAULT_RESPONSE_STABLE_POLLS
+  );
+  const requiredDisappearedPolls = getPositiveInteger(
+    disappearedAnswerPolls,
+    'NOTEBOOKLM_DISAPPEARED_ANSWER_POLLS',
+    DEFAULT_DISAPPEARED_ANSWER_POLLS
+  );
+  const disappearedAnswerMinimumLength = getPositiveInteger(
+    disappearedAnswerMinChars,
+    'NOTEBOOKLM_DISAPPEARED_ANSWER_MIN_CHARS',
+    DEFAULT_DISAPPEARED_ANSWER_MIN_CHARS
+  );
 
   while (Date.now() < deadline) {
     pollCount++;
@@ -431,6 +476,15 @@ export async function waitForLatestAnswer(
 
         // Check if it's a placeholder
         if (isPlaceholder(lower)) {
+          if (lastCandidate && lastCandidate.length >= disappearedAnswerMinimumLength) {
+            missingAfterCandidateCount++;
+            if (missingAfterCandidateCount >= requiredDisappearedPolls) {
+              log.warning(
+                `⚠️ [RESPONSE] Returning last observed answer after ${missingAfterCandidateCount} placeholder polls (${lastCandidate.length} chars)`
+              );
+              return lastCandidate;
+            }
+          }
           if (debug) {
             log.debug(
               `🔍 [DEBUG] Found placeholder: "${normalized.substring(0, 50)}..." - continuing...`
@@ -439,6 +493,8 @@ export async function waitForLatestAnswer(
           await page.waitForTimeout(250);
           continue;
         }
+
+        missingAfterCandidateCount = 0;
 
         // IMMEDIATE RETURN: Error messages don't need stability check
         if (isErrorMessage(normalized)) {
@@ -501,6 +557,14 @@ export async function waitForLatestAnswer(
           return normalized;
         }
       }
+    } else if (lastCandidate && lastCandidate.length >= disappearedAnswerMinimumLength) {
+      missingAfterCandidateCount++;
+      if (missingAfterCandidateCount >= requiredDisappearedPolls) {
+        log.warning(
+          `⚠️ [RESPONSE] Returning last observed answer after ${missingAfterCandidateCount} missing polls (${lastCandidate.length} chars)`
+        );
+        return lastCandidate;
+      }
     }
 
     await page.waitForTimeout(pollIntervalMs);
@@ -531,8 +595,8 @@ export async function waitForLatestAnswer(
  * @param debug Enable debug logging
  * @param pollCount Current poll number (for conditional logging)
  * @param baselineContainerCount Container count before the question was submitted (position path)
- * @returns First NEW response text found, or null
  * @param existingAnswerMarker Marker for containers present before the request
+ * @returns First NEW response text found, or null
  */
 async function extractLatestText(
   page: Page,

@@ -1673,11 +1673,11 @@ export class ToolHandlers {
       // show_browser takes precedence over browser_options.headless
       let overrideHeadless: boolean | undefined = undefined;
       if (show_browser !== undefined) {
-        overrideHeadless = show_browser;
+        overrideHeadless = !show_browser;
       } else if (browser_options?.show !== undefined) {
-        overrideHeadless = browser_options.show;
+        overrideHeadless = !browser_options.show;
       } else if (browser_options?.headless !== undefined) {
-        overrideHeadless = !browser_options.headless;
+        overrideHeadless = browser_options.headless;
       }
 
       try {

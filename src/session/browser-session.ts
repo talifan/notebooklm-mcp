@@ -36,6 +36,18 @@ import { log } from '../utils/logger.js';
 import type { SessionInfo, ProgressCallback } from '../types.js';
 import { RateLimitError } from '../errors.js';
 
+const DEFAULT_NOTEBOOKLM_RESPONSE_TIMEOUT_MS = 300000;
+const DEFAULT_NOTEBOOKLM_CONTENT_LOAD_TIMEOUT_MS = 15000;
+
+function getPositiveIntegerFromEnv(name: string, fallback: number): number {
+  const value = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function useFastInput(): boolean {
+  return process.env.NOTEBOOKLM_FAST_INPUT === 'true';
+}
+
 /**
  * Result from asking a question (internal)
  */
@@ -269,7 +281,10 @@ export class BrowserSession {
   private async waitForContentLoaded(): Promise<void> {
     if (!this.page) return;
 
-    const maxWaitMs = 15000;
+    const maxWaitMs = getPositiveIntegerFromEnv(
+      'NOTEBOOKLM_CONTENT_LOAD_TIMEOUT_MS',
+      DEFAULT_NOTEBOOKLM_CONTENT_LOAD_TIMEOUT_MS
+    );
     const pollIntervalMs = 500;
     const startTime = Date.now();
 
@@ -688,12 +703,18 @@ export class BrowserSession {
         );
       }
 
-      log.info(`  ⌨️  Typing question with human-like behavior...`);
-      await sendProgress?.('Typing question with human-like behavior...', 2, 5);
-      await humanType(page, inputSelector, question, {
-        withTypos: true,
-        wpm: Math.max(CONFIG.typingWpmMin, CONFIG.typingWpmMax),
-      });
+      if (useFastInput()) {
+        log.info(`  ⌨️  Filling question directly...`);
+        await sendProgress?.('Entering question...', 2, 5);
+        await page.fill(inputSelector, question);
+      } else {
+        log.info(`  ⌨️  Typing question with human-like behavior...`);
+        await sendProgress?.('Typing question with human-like behavior...', 2, 5);
+        await humanType(page, inputSelector, question, {
+          withTypos: true,
+          wpm: Math.max(CONFIG.typingWpmMin, CONFIG.typingWpmMax),
+        });
+      }
 
       // Small pause before submitting
       await randomDelay(500, 1000);
@@ -722,7 +743,10 @@ export class BrowserSession {
       await sendProgress?.('Waiting for NotebookLM response (streaming detection active)...', 3, 5);
       const answer = await waitForLatestAnswer(page, {
         question,
-        timeoutMs: 300000, // 5 minutes (long answers with many citations can exceed 2 min)
+        timeoutMs: getPositiveIntegerFromEnv(
+          'NOTEBOOKLM_RESPONSE_TIMEOUT_MS',
+          DEFAULT_NOTEBOOKLM_RESPONSE_TIMEOUT_MS
+        ),
         pollIntervalMs: 1000,
         ignoreTexts: existingResponses,
         baselineContainerCount,

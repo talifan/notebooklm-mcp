@@ -6,6 +6,15 @@ echo "==========================================="
 echo "  NotebookLM MCP Server - Docker"
 echo "==========================================="
 echo ""
+
+PROFILE_DIR="${CHROME_PROFILE_DIR:-${DATA_DIR:-/data}/chrome_profile}"
+if [ -d "$PROFILE_DIR" ]; then
+    echo "[Entrypoint] Cleaning stale Chromium profile locks in ${PROFILE_DIR}..."
+    rm -f "${PROFILE_DIR}/SingletonLock" \
+          "${PROFILE_DIR}/SingletonSocket" \
+          "${PROFILE_DIR}/SingletonCookie" 2>/dev/null || true
+fi
+
 # Check if VNC should be started (default: yes in Docker)
 ENABLE_VNC="${ENABLE_VNC:-true}"
 if [ "$ENABLE_VNC" = "true" ]; then

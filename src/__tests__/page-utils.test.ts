@@ -59,6 +59,9 @@ describe('Page Utils - Placeholder Detection', () => {
     'getting the context',
     'loading',
     'please wait',
+    'обработка',
+    'ответ формируется',
+    'подождите',
   ];
 
   const nonPlaceholderTexts = [
@@ -73,7 +76,7 @@ describe('Page Utils - Placeholder Detection', () => {
     it('should recognize placeholder snippets', () => {
       placeholderTexts.forEach((text) => {
         expect(text.toLowerCase()).toMatch(
-          /(wird erstellt|being created|being generated|creating|generating|getting the context|loading|please wait)/i
+          /(wird erstellt|being created|being generated|creating|generating|getting the context|loading|please wait|обработка|ответ формируется|подождите)/i
         );
       });
     });
@@ -688,6 +691,58 @@ describe('Page Utils - Exported Functions', () => {
 
       // Should timeout because placeholder is not a valid answer
       expect(result).toBeNull();
+    });
+
+    it('should skip Russian placeholders with a unicode ellipsis', async () => {
+      const mockTextElement = {
+        innerText: jest.fn().mockResolvedValue('Обработка…'),
+      };
+      const mockContainer = {
+        $: jest.fn().mockResolvedValue(mockTextElement),
+      };
+      const mockPage = {
+        $$: jest.fn().mockResolvedValue([mockContainer]),
+        waitForTimeout: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const result = await waitForLatestAnswer(mockPage, {
+        timeoutMs: 100,
+        pollIntervalMs: 10,
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('returns the last long answer when NotebookLM replaces it with a placeholder', async () => {
+      const firstAnswer = 'First answer fragment. '.repeat(20).trim();
+      const lastAnswer = 'Final observed answer. '.repeat(30).trim();
+      const responses = [firstAnswer, lastAnswer, 'Answer is being generated...'];
+      let call = 0;
+      const mockTextElement = {
+        innerText: jest.fn().mockImplementation(async () => {
+          const value = responses[Math.min(call, responses.length - 1)];
+          call++;
+          return value;
+        }),
+      };
+      const mockContainer = {
+        $: jest.fn().mockResolvedValue(mockTextElement),
+      };
+      const mockPage = {
+        $$: jest.fn().mockResolvedValue([mockContainer]),
+        waitForTimeout: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const result = await waitForLatestAnswer(mockPage, {
+        baselineContainerCount: 0,
+        stablePolls: 5,
+        disappearedAnswerPolls: 2,
+        disappearedAnswerMinChars: 100,
+        timeoutMs: 500,
+        pollIntervalMs: 1,
+      });
+
+      expect(result).toBe(lastAnswer);
     });
 
     it('should skip question echo responses', async () => {
