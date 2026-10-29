@@ -17,8 +17,8 @@ services:
 
     # Port mapping
     ports:
-      - '${HTTP_PORT:-3000}:3000'
-      - '6080:6080' # noVNC web interface for visual auth
+      - '127.0.0.1:${HTTP_PORT:-3000}:3000'
+      - '127.0.0.1:6080:6080' # noVNC stays available on host loopback
 
     # Persistent data storage
     volumes:

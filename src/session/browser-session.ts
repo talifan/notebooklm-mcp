@@ -19,13 +19,8 @@ import { SharedContextManager } from './shared-context-manager.js';
 import { AuthManager } from '../auth/auth-manager.js';
 import { getAccountManager } from '../accounts/account-manager.js';
 import { humanType, randomDelay } from '../utils/stealth-utils.js';
-import {
-  waitForLatestAnswer,
-  snapshotAllResponses,
-  countAnswerContainers,
-  markExistingAnswerContainers,
-  isRateLimitMessage,
-} from '../utils/page-utils.js';
+import { waitForLatestAnswer, isRateLimitMessage } from '../utils/page-utils.js';
+import { beginSubmittedTurn, createSubmission, endSubmittedTurn } from '../utils/turn-tracker.js';
 import {
   extractCitations,
   type SourceFormat,
@@ -73,6 +68,7 @@ export class BrowserSession {
   private authManager: AuthManager;
   private page: Page | null = null;
   private initialized: boolean = false;
+  private askQueue: Promise<void> = Promise.resolve();
   /** Headless mode override - true=headless, false=visible, undefined=use config default */
   private overrideHeadless?: boolean;
 
@@ -621,6 +617,24 @@ export class BrowserSession {
     sendProgress?: ProgressCallback,
     sourceFormat: SourceFormat = 'none'
   ): Promise<AskResult> {
+    const previous = this.askQueue;
+    let release!: () => void;
+    this.askQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await this.askUnlocked(question, sendProgress, sourceFormat);
+    } finally {
+      release();
+    }
+  }
+
+  private async askUnlocked(
+    question: string,
+    sendProgress?: ProgressCallback,
+    sourceFormat: SourceFormat = 'none'
+  ): Promise<AskResult> {
     const askOnce = async (): Promise<AskResult> => {
       if (!this.initialized || !this.page || this.isPageClosedSafe()) {
         log.warning(`  ℹ️  Session not initialized or page missing → re-initializing...`);
@@ -628,7 +642,7 @@ export class BrowserSession {
       }
 
       log.info(`💬 [${this.sessionId}] Asking: "${question.substring(0, 100)}..."`);
-      const page = this.page!;
+      let page = this.page!;
       // Ensure we're still authenticated — check URL first (Google redirect = expired)
       await sendProgress?.('Verifying authentication...', 2, 5);
       const currentUrl = page.url();
@@ -661,25 +675,12 @@ export class BrowserSession {
         }
       }
 
-      // Snapshot existing responses BEFORE asking
-      log.info(`  📸 Snapshotting existing responses...`);
-      let existingResponses = await snapshotAllResponses(page);
-      log.success(`  ✅ Captured ${existingResponses.length} existing responses`);
+      page = this.page!;
 
       // Ensure sources are selected before asking
       await this.ensureSourcesSelected();
       await this.ensureDiscussionReady();
       await this.dismissBlockingOverlays();
-
-      log.info(`  🔄 Re-snapshotting responses after Discussion recovery...`);
-      existingResponses = await snapshotAllResponses(page);
-      log.success(`  ✅ Captured ${existingResponses.length} existing responses after recovery`);
-
-      // Position baseline for new-answer detection — captured last, right
-      // before typing/submit, so no DOM mutation slips in between.
-      const baselineContainerCount = await countAnswerContainers(page);
-      const existingAnswerMarker = `${this.sessionId}-${Date.now()}`;
-      await markExistingAnswerContainers(page, existingAnswerMarker);
 
       // Check for rate limit BEFORE trying to submit a question
       log.info(`  🔍 Checking for rate limit before asking...`);
@@ -712,14 +713,18 @@ export class BrowserSession {
         );
       }
 
+      // All authentication/panel/navigation recovery must precede the baseline.
+      page = this.page!;
+      const submission = createSubmission(question);
+
       if (useFastInput()) {
         log.info(`  ⌨️  Filling question directly...`);
         await sendProgress?.('Entering question...', 2, 5);
-        await page.fill(inputSelector, question);
+        await page.fill(inputSelector, submission.transportQuestion);
       } else {
         log.info(`  ⌨️  Typing question with human-like behavior...`);
         await sendProgress?.('Typing question with human-like behavior...', 2, 5);
-        await humanType(page, inputSelector, question, {
+        await humanType(page, inputSelector, submission.transportQuestion, {
           withTypos: true,
           wpm: Math.max(CONFIG.typingWpmMin, CONFIG.typingWpmMax),
         });
@@ -728,40 +733,48 @@ export class BrowserSession {
       // Small pause before submitting
       await randomDelay(500, 1000);
 
-      // Submit the question (Enter key)
-      log.info(`  📤 Submitting question...`);
-      await sendProgress?.('Submitting question...', 3, 5);
-      await page.keyboard.press('Enter');
-
-      // Do not inspect the transcript until NotebookLM has accepted the
-      // question. Otherwise a virtualized historical card can be mistaken for
-      // a fresh answer after a failed submission.
-      await page.waitForFunction(
-        `(() => {
-          const input = document.querySelector(${JSON.stringify(inputSelector)});
-          return Boolean(input && 'value' in input && String(input.value).trim() === '');
-        })()`,
-        { timeout: 10000 }
+      // Observe the actual generating turn before Enter; text hashes, DOM
+      // positions and absence of a marker do not establish request identity.
+      const submittedTurn = await beginSubmittedTurn(
+        page,
+        submission.transportQuestion,
+        submission.marker
       );
+      let answer: string | null;
+      try {
+        // Submit the question (Enter key)
+        log.info(`  📤 Submitting question...`);
+        await sendProgress?.('Submitting question...', 3, 5);
+        await page.keyboard.press('Enter');
 
-      // Small pause after submit
-      await randomDelay(1000, 1500);
+        // Do not inspect the transcript until NotebookLM has accepted the
+        // question. Otherwise a virtualized historical card can be mistaken for
+        // a fresh answer after a failed submission.
+        await this.waitForSubmissionAccepted(page, inputSelector);
 
-      // Wait for the response with streaming detection
-      log.info(`  ⏳ Waiting for response (with streaming detection)...`);
-      await sendProgress?.('Waiting for NotebookLM response (streaming detection active)...', 3, 5);
-      const answer = await waitForLatestAnswer(page, {
-        question,
-        timeoutMs: getPositiveIntegerFromEnv(
-          'NOTEBOOKLM_RESPONSE_TIMEOUT_MS',
-          DEFAULT_NOTEBOOKLM_RESPONSE_TIMEOUT_MS
-        ),
-        pollIntervalMs: 1000,
-        ignoreTexts: existingResponses,
-        baselineContainerCount,
-        existingAnswerMarker,
-        debug: true,
-      });
+        // Small pause after submit
+        await randomDelay(1000, 1500);
+
+        // Wait for the response with streaming detection
+        log.info(`  ⏳ Waiting for response (with streaming detection)...`);
+        await sendProgress?.(
+          'Waiting for NotebookLM response (streaming detection active)...',
+          3,
+          5
+        );
+        answer = await waitForLatestAnswer(page, {
+          question,
+          timeoutMs: getPositiveIntegerFromEnv(
+            'NOTEBOOKLM_RESPONSE_TIMEOUT_MS',
+            DEFAULT_NOTEBOOKLM_RESPONSE_TIMEOUT_MS
+          ),
+          pollIntervalMs: 1000,
+          submittedTurn,
+          debug: true,
+        });
+      } finally {
+        await endSubmittedTurn(page, submittedTurn);
+      }
 
       if (!answer) {
         throw new Error('Timeout waiting for response from NotebookLM');
@@ -851,6 +864,26 @@ export class BrowserSession {
    *
    * Based on Python ask() method from browser_session.py:166-171
    */
+  private async waitForSubmissionAccepted(page: Page, inputSelector: string): Promise<void> {
+    try {
+      await page.waitForFunction(
+        `(() => {
+          const input = document.querySelector(${JSON.stringify(inputSelector)});
+          return Boolean(input && 'value' in input && String(input.value).trim() === '');
+        })()`,
+        undefined,
+        { timeout: 10000 }
+      );
+    } catch {
+      if (await this.detectRateLimitError()) {
+        throw new RateLimitError('NotebookLM daily limit reached - switching to another account');
+      }
+      throw new Error(
+        'NotebookLM did not accept the question: composer did not clear within 10000 ms'
+      );
+    }
+  }
+
   private async findChatInput(): Promise<string | null> {
     if (!this.page) {
       return null;

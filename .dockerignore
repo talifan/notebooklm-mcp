@@ -1,49 +1,13 @@
-# Git
-.git
-.gitignore
-
-# Dependencies (will be installed in container)
-node_modules
-
-# Tests
-tests
-*.test.ts
-*.test.js
-jest.config.*
-coverage
-
-# Development files
-.env
-.env.*
-*.log
-*.md
-!README.md
-
-# IDE/Editor
-.vscode
-.idea
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Build artifacts not needed
-*.tsbuildinfo
-
-# Documentation (optional in container)
-docs
-deployment
-
-# Local data (should be mounted as volume)
-library.json
-*.enc.json
-
-# Claude/development specific
-.claude
+# Only build inputs belong in the context. Browser state, .env, Git history,
+# node_modules and deploy-package are deliberately excluded.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!tsconfig*.json
+!src/
+!src/**
+!scripts/
+!scripts/**
+src/__tests__/
 scripts/*.ps1
-*.output
-
-# Husky hooks
-.husky

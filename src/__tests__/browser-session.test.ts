@@ -12,6 +12,7 @@ jest.unstable_mockModule('../utils/logger.js', () => ({
     warning: jest.fn(),
     error: jest.fn(),
     dim: jest.fn(),
+    debug: jest.fn(),
   },
 }));
 
@@ -409,6 +410,131 @@ describe('BrowserSession Extended Tests', () => {
   });
 
   describe('Discussion Recovery', () => {
+    it('captures submission identity on the recovered page after navigation, preserving the API question', async () => {
+      jest.useFakeTimers();
+      const originalFast = process.env.NOTEBOOKLM_FAST_INPUT;
+      process.env.NOTEBOOKLM_FAST_INPUT = 'true';
+      try {
+        const session = new BrowserSession(
+          'recovered',
+          mockSharedContextManager,
+          mockAuthManager,
+          'https://notebooklm.google.com/notebook/test'
+        );
+        const oldPage = {
+          url: () => 'https://notebooklm.google.com/notebook/test',
+          isClosed: () => false,
+          goto: jest.fn().mockResolvedValue(undefined),
+          evaluate: jest.fn(),
+        };
+        const recovered = {
+          url: oldPage.url,
+          isClosed: oldPage.isClosed,
+          fill: jest.fn().mockResolvedValue(undefined),
+          keyboard: { press: jest.fn().mockResolvedValue(undefined) },
+          waitForFunction: jest.fn().mockResolvedValue(undefined),
+          waitForTimeout: jest.fn().mockResolvedValue(undefined),
+          $: jest.fn().mockResolvedValue(null),
+          evaluate: jest
+            .fn()
+            .mockImplementation(async (script: string) =>
+              script.includes('return state.observation')
+                ? { text: 'Complete answer DOT4.', generating: false, complete: true }
+                : true
+            ),
+        };
+        session['page'] = oldPage;
+        session['initialized'] = true;
+        mockAuthManager.validateCookiesExpiry = jest.fn().mockResolvedValue(true);
+        session['ensureSourcesSelected'] = jest.fn().mockResolvedValue(undefined);
+        session['ensureDiscussionReady'] = jest.fn().mockResolvedValue(undefined);
+        session['dismissBlockingOverlays'] = jest.fn().mockResolvedValue(undefined);
+        session['detectRateLimitError'] = jest.fn().mockResolvedValue(false);
+        session['findChatInput'] = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue('textarea.query-box-input');
+        session['waitForNotebookLMReady'] = jest.fn().mockImplementation(async () => {
+          session['page'] = recovered;
+        });
+        const result = session.ask('Original question OBD2?');
+        await jest.runAllTimersAsync();
+        await expect(result).resolves.toMatchObject({ answer: 'Complete answer DOT4.' });
+        expect(oldPage.goto).toHaveBeenCalledTimes(1);
+        expect(oldPage.evaluate).not.toHaveBeenCalled();
+        expect(recovered.fill).toHaveBeenCalledWith(
+          'textarea.query-box-input',
+          expect.stringContaining('Original question OBD2?\n\n[nblm-request:')
+        );
+        expect(recovered.evaluate).toHaveBeenCalled();
+      } finally {
+        if (originalFast === undefined) delete process.env.NOTEBOOKLM_FAST_INPUT;
+        else process.env.NOTEBOOKLM_FAST_INPUT = originalFast;
+        jest.useRealTimers();
+      }
+    });
+
+    it('passes the acceptance timeout as Patchright options, not function argument', async () => {
+      const session = new BrowserSession(
+        'accepted',
+        mockSharedContextManager,
+        mockAuthManager,
+        'https://notebooklm.google.com/notebook/test'
+      );
+      const page = { waitForFunction: jest.fn().mockResolvedValue(undefined) };
+      await session['waitForSubmissionAccepted'](page, 'textarea.query-box-input');
+      expect(page.waitForFunction).toHaveBeenCalledWith(expect.any(String), undefined, {
+        timeout: 10000,
+      });
+    });
+
+    it('reports unaccepted submission and checks rate-limit state on timeout', async () => {
+      const session = new BrowserSession(
+        'rejected',
+        mockSharedContextManager,
+        mockAuthManager,
+        'https://notebooklm.google.com/notebook/test'
+      );
+      session['detectRateLimitError'] = jest.fn().mockResolvedValue(false);
+      const page = { waitForFunction: jest.fn().mockRejectedValue(new Error('timeout')) };
+      await expect(session['waitForSubmissionAccepted'](page, 'textarea')).rejects.toThrow(
+        'did not accept the question'
+      );
+      expect(session['detectRateLimitError']).toHaveBeenCalledTimes(1);
+      session['detectRateLimitError'].mockResolvedValue(true);
+      await expect(session['waitForSubmissionAccepted'](page, 'textarea')).rejects.toThrow(
+        'daily limit'
+      );
+    });
+
+    it('serializes calls on one page and releases the queue after a failed call', async () => {
+      const session = new BrowserSession(
+        'serialized',
+        mockSharedContextManager,
+        mockAuthManager,
+        'https://notebooklm.google.com/notebook/test'
+      );
+      let release!: () => void;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      session['askUnlocked'] = jest.fn().mockImplementation(async (question: string) => {
+        if (question === 'first') {
+          await barrier;
+          throw new Error('synthetic failure');
+        }
+        return { answer: 'second', originalAnswer: 'second' };
+      });
+      const first = session.ask('first');
+      const failure = expect(first).rejects.toThrow('synthetic failure');
+      const second = session.ask('second');
+      await Promise.resolve();
+      expect(session['askUnlocked']).toHaveBeenCalledTimes(1);
+      release();
+      await failure;
+      await expect(second).resolves.toEqual({ answer: 'second', originalAnswer: 'second' });
+    });
+
     it('dismisses a visible CDK backdrop before typing', async () => {
       const session = new BrowserSession(
         'discussion-test-overlay',

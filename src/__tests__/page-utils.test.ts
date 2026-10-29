@@ -280,10 +280,10 @@ describe('Page Utils - Response Sanitization', () => {
     sanitizeResponseText = module.sanitizeResponseText;
   });
 
-  it('removes leaked UI control lines and adjacent citation artifacts', () => {
+  it('removes leaked UI labels while preserving ambiguous numeric values', () => {
     const raw = ['Answer text', '1', 'more_horiz', '.', 'Second line'].join('\n');
 
-    expect(sanitizeResponseText(raw)).toBe('Answer text\nSecond line');
+    expect(sanitizeResponseText(raw)).toBe('Answer text\n1\nSecond line');
   });
 
   it('preserves ordinary response text', () => {
@@ -713,7 +713,7 @@ describe('Page Utils - Exported Functions', () => {
       expect(result).toBeNull();
     });
 
-    it('returns the last long answer when NotebookLM replaces it with a placeholder', async () => {
+    it('refuses to complete a disappeared fragment without submitted-turn proof', async () => {
       const firstAnswer = 'First answer fragment. '.repeat(20).trim();
       const lastAnswer = 'Final observed answer. '.repeat(30).trim();
       const responses = [firstAnswer, lastAnswer, 'Answer is being generated...'];
@@ -742,7 +742,7 @@ describe('Page Utils - Exported Functions', () => {
         pollIntervalMs: 1,
       });
 
-      expect(result).toBe(lastAnswer);
+      expect(result).toBeNull();
     });
 
     it('should skip question echo responses', async () => {
@@ -849,7 +849,7 @@ describe('Page Utils - Exported Functions', () => {
         };
       }
 
-      it('detects a new answer whose text duplicates an earlier answer, by DOM position', async () => {
+      it('refuses position alone as proof of a repeated answer belonging to the request', async () => {
         // Two prior answers already say "Yes"; the new (3rd) container also
         // says "Yes". Hash-based dedup would skip it as "known" — position
         // must not.
@@ -866,7 +866,7 @@ describe('Page Utils - Exported Functions', () => {
           pollIntervalMs: 10,
         });
 
-        expect(result).toBe('Yes');
+        expect(result).toBeNull();
       });
 
       it('times out with the same setup when no baseline is given (documents the hash-dedup limitation)', async () => {
@@ -901,7 +901,7 @@ describe('Page Utils - Exported Functions', () => {
         expect(result).toBeNull();
       });
 
-      it('picks the last container past the baseline when several are new', async () => {
+      it('refuses appended historical cards as proof of current request identity', async () => {
         const containers = [
           makeContainer('Prior answer'),
           makeContainer('First new answer'),
@@ -918,7 +918,7 @@ describe('Page Utils - Exported Functions', () => {
           pollIntervalMs: 10,
         });
 
-        expect(result).toBe('Second new answer');
+        expect(result).toBeNull();
       });
     });
   });
