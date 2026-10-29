@@ -22,7 +22,7 @@ COPY --chown=notebooklm:notebooklm package*.json ./
 USER notebooklm
 
 # Installer TOUTES les dépendances (avec devDependencies pour TypeScript)
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 # Copier les sources AVANT de builder
 COPY --chown=notebooklm:notebooklm src/ ./src/
@@ -35,7 +35,7 @@ RUN npm run build
 COPY --chown=notebooklm:notebooklm scripts/ ./scripts/
 
 # Supprimer les devDependencies après le build
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --no-audit --no-fund
 
 # Installer le browser
 RUN npx patchright install chromium

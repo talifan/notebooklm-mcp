@@ -409,6 +409,30 @@ describe('BrowserSession Extended Tests', () => {
   });
 
   describe('Discussion Recovery', () => {
+    it('dismisses a visible CDK backdrop before typing', async () => {
+      const session = new BrowserSession(
+        'discussion-test-overlay',
+        mockSharedContextManager,
+        mockAuthManager,
+        'https://notebooklm.google.com/notebook/test'
+      );
+
+      const backdrop = {
+        isVisible: jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+        click: jest.fn(),
+      };
+      const page = {
+        locator: jest.fn().mockReturnValue({ first: () => backdrop }),
+        keyboard: { press: jest.fn().mockResolvedValue(undefined) },
+      };
+      session['page'] = page;
+
+      await session['dismissBlockingOverlays']();
+
+      expect(page.keyboard.press).toHaveBeenCalledWith('Escape');
+      expect(backdrop.click).not.toHaveBeenCalled();
+    });
+
     it('ignores disabled chat inputs when searching for the composer', async () => {
       const session = new BrowserSession(
         'discussion-test-1',

@@ -669,6 +669,7 @@ export class BrowserSession {
       // Ensure sources are selected before asking
       await this.ensureSourcesSelected();
       await this.ensureDiscussionReady();
+      await this.dismissBlockingOverlays();
 
       log.info(`  🔄 Re-snapshotting responses after Discussion recovery...`);
       existingResponses = await snapshotAllResponses(page);
@@ -685,6 +686,11 @@ export class BrowserSession {
       if (await this.detectRateLimitError()) {
         throw new RateLimitError('NotebookLM daily limit reached - switching to another account');
       }
+
+      // The composer can remain visible behind a CDK modal backdrop after a
+      // previous interaction. Clear it immediately before locating/typing so
+      // a stale overlay cannot intercept a pointer action during submission.
+      await this.dismissBlockingOverlays();
 
       // Find the chat input
       let inputSelector = await this.findChatInput();
@@ -900,6 +906,40 @@ export class BrowserSession {
       } catch {
         break;
       }
+    }
+  }
+
+  /**
+   * Close a leftover Angular/CDK modal that intercepts clicks on the composer.
+   *
+   * NotebookLM sometimes keeps the backdrop for a short time after closing a
+   * side panel. Escape is the normal route; clicking the backdrop is a safe
+   * fallback because this method is only called before starting a new question.
+   */
+  private async dismissBlockingOverlays(): Promise<void> {
+    if (!this.page) {
+      return;
+    }
+
+    try {
+      const backdrop = this.page
+        .locator('.cdk-overlay-backdrop.cdk-overlay-backdrop-showing')
+        .first();
+
+      if (!(await backdrop.isVisible({ timeout: 300 }))) {
+        return;
+      }
+
+      log.info(`  🧹 Dismissing blocking NotebookLM overlay...`);
+      await this.page.keyboard.press('Escape').catch(() => {});
+      await randomDelay(200, 400);
+
+      if (await backdrop.isVisible({ timeout: 300 }).catch(() => false)) {
+        await backdrop.click({ force: true }).catch(() => {});
+        await randomDelay(200, 400);
+      }
+    } catch {
+      // The overlay may have disappeared while it was being inspected.
     }
   }
 

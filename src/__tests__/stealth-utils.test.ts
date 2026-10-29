@@ -570,7 +570,7 @@ describe('Stealth Utils with Page Mocks', () => {
       (CONFIG as { stealthHumanTyping: boolean }).stealthHumanTyping = true;
       await humanType(mockPage, '#input', 'hi', { wpm: 600, withTypos: false });
       expect(mockPage.fill).toHaveBeenCalled();
-      expect(mockPage.click).toHaveBeenCalled();
+      expect(mockPage.click).not.toHaveBeenCalled();
     }, 10000);
   });
 

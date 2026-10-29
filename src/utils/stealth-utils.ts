@@ -139,8 +139,11 @@ export async function humanType(
   await page.fill(selector, '');
   await randomDelay(30, 80);
 
-  // Click to focus
-  await page.click(selector);
+  // `fill()` above focuses the control as part of its action. Do not perform a
+  // separate pointer click here: NotebookLM can leave a transient CDK backdrop
+  // visible while the composer is already actionable via its DOM API. A click
+  // would then wait for Playwright's full action timeout even though typing can
+  // proceed safely.
   await randomDelay(20, 60);
 
   // Type each character
